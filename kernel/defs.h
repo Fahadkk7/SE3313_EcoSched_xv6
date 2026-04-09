@@ -183,3 +183,12 @@ void            virtio_disk_intr(void);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
+
+
+// sensor system
+extern struct spinlock sensorlock;
+extern struct sensor_data sensors;
+
+void     sensorinit(void);
+int      sensor_update(int type, int value);
+int      sensor_read(int type);

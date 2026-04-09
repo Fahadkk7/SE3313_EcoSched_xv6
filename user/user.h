@@ -24,6 +24,9 @@ int getpid(void);
 char* sys_sbrk(int,int);
 int pause(int);
 int uptime(void);
+int updatesensor(int type, int value);
+int getsensorstat(int type);
+
 
 // ulib.c
 int stat(const char*, struct stat*);

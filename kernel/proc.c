@@ -6,6 +6,11 @@
 #include "proc.h"
 #include "defs.h"
 
+
+struct spinlock sensorlock;
+struct sensor_data sensors;
+
+
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -51,6 +56,7 @@ procinit(void)
   
   initlock(&pid_lock, "nextpid");
   initlock(&wait_lock, "wait_lock");
+  sensorinit();
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
       p->state = UNUSED;
@@ -687,4 +693,53 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+
+//sensor stuff
+
+void
+sensorinit(void)
+{
+  initlock(&sensorlock, "sensorlock");
+  sensors.temperature = 50;
+  sensors.power_usage = 30;
+}
+
+int
+sensor_update(int type, int value)
+{
+  acquire(&sensorlock);
+
+  if(type == SENSOR_TEMP){
+    sensors.temperature = value;
+  } else if(type == SENSOR_POWER){
+    sensors.power_usage = value;
+  } else {
+    release(&sensorlock);
+    return -1;
+  }
+
+  release(&sensorlock);
+  return 0;
+}
+
+int
+sensor_read(int type)
+{
+  int result;
+
+  acquire(&sensorlock);
+
+  if(type == SENSOR_TEMP){
+    result = sensors.temperature;
+  } else if(type == SENSOR_POWER){
+    result = sensors.power_usage;
+  } else {
+    release(&sensorlock);
+    return -1;
+  }
+
+  release(&sensorlock);
+  return result;
 }

@@ -105,3 +105,12 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 };
+
+// Sensor types
+#define SENSOR_TEMP  0
+#define SENSOR_POWER 1
+
+struct sensor_data {
+  int temperature;
+  int power_usage;
+};

@@ -146,6 +146,9 @@ UPROGS=\
 	$U/_forphan\
 	$U/_dorphan\
 	$U/_hello_world\
+	$U/_tempsensor\
+	$U/_powersensor\
+	$U/_readsensors\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

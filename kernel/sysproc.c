@@ -107,3 +107,24 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_updatesensor(void)
+{
+  int type, value;
+
+  argint(0, &type);
+  argint(1, &value);
+
+  return sensor_update(type, value);
+}
+
+uint64
+sys_getsensorstat(void)
+{
+  int type;
+
+  argint(0, &type);
+
+  return sensor_read(type);
+}
