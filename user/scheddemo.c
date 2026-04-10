@@ -27,7 +27,7 @@
 #define ECO_CRITICAL 2
 
 #define NUM_WORKERS  3
-#define COUNTING_ITERS 80000000  /* iterations per measurement window */
+#define WINDOW_TICKS 30  /* each measurement window = 30 timer ticks */
 
 static const char *
 state_name(int s)
@@ -46,18 +46,20 @@ delay(int n)
 }
 
 /*
- * Worker child: spins forever, periodically printing how many
- * iterations it completed.  Throttled workers will report fewer
- * iterations per window because the scheduler gives them less CPU.
+ * Worker child: counts how many iterations it can complete within
+ * a fixed time window (WINDOW_TICKS).  A throttled worker gets less
+ * CPU time per window, so its iteration count drops visibly.
  */
 static void
 worker(int id)
 {
   int round = 0;
   while(1){
+    uint start = uptime();
     volatile int count = 0;
-    for(int i = 0; i < COUNTING_ITERS; i++)
+    while(uptime() - start < WINDOW_TICKS){
       count++;
+    }
     round++;
     printf("[worker %d] round %d  iters=%d\n", id, round, count);
   }
