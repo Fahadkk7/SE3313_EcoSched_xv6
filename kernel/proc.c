@@ -698,12 +698,37 @@ procdump(void)
 
 //sensor stuff
 
+// Global eco state — protected by sensorlock.
+// Always reflects the latest sustainability classification.
+int eco_state;
+
 void
 sensorinit(void)
 {
   initlock(&sensorlock, "sensorlock");
   sensors.temperature = 50;
   sensors.power_usage = 30;
+  eco_state = ECO_NORMAL;      // start in normal state
+}
+
+// Recompute eco_state from current sensor readings.
+// MUST be called with sensorlock already held.
+// Thresholds (defined in proc.h):
+//   CRITICAL : temp >= 85  OR  power >= 75
+//   ECO      : temp >= 70  OR  power >= 50
+//   NORMAL   : otherwise
+void
+update_eco_state(void)
+{
+  int temp  = sensors.temperature;
+  int power = sensors.power_usage;
+
+  if(temp >= THRESH_CRITICAL_TEMP || power >= THRESH_CRITICAL_POWER)
+    eco_state = ECO_CRITICAL;
+  else if(temp >= THRESH_ECO_TEMP || power >= THRESH_ECO_POWER)
+    eco_state = ECO_ECO;
+  else
+    eco_state = ECO_NORMAL;
 }
 
 int
@@ -719,6 +744,10 @@ sensor_update(int type, int value)
     release(&sensorlock);
     return -1;
   }
+
+  // Immediately recompute eco state while lock is still held.
+  // This keeps the state consistent with no additional locking cost.
+  update_eco_state();
 
   release(&sensorlock);
   return 0;
@@ -742,4 +771,16 @@ sensor_read(int type)
 
   release(&sensorlock);
   return result;
+}
+
+// Return the current eco state to a syscall handler.
+// Acquires sensorlock independently so any kernel code can call this safely.
+int
+eco_read(void)
+{
+  int state;
+  acquire(&sensorlock);
+  state = eco_state;
+  release(&sensorlock);
+  return state;
 }

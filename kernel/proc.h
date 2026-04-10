@@ -110,6 +110,17 @@ struct proc {
 #define SENSOR_TEMP  0
 #define SENSOR_POWER 1
 
+// Eco state constants (returned by getecostate syscall)
+#define ECO_NORMAL   0
+#define ECO_ECO      1
+#define ECO_CRITICAL 2
+
+// Threshold values for the sustainability monitor
+#define THRESH_CRITICAL_TEMP  85
+#define THRESH_CRITICAL_POWER 75
+#define THRESH_ECO_TEMP       70
+#define THRESH_ECO_POWER      50
+
 struct sensor_data {
   int temperature;
   int power_usage;

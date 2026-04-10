@@ -188,7 +188,10 @@ void            virtio_disk_intr(void);
 // sensor system
 extern struct spinlock sensorlock;
 extern struct sensor_data sensors;
+extern int eco_state;
 
 void     sensorinit(void);
 int      sensor_update(int type, int value);
 int      sensor_read(int type);
+void     update_eco_state(void);
+int      eco_read(void);

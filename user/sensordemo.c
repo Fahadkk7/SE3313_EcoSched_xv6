@@ -1,4 +1,4 @@
-/*
+ /*
  * sensordemo.c — Feature 1 concurrency demonstration.
  *
  * Forks two child processes:

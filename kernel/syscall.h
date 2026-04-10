@@ -22,3 +22,4 @@
 #define SYS_close  21
 #define SYS_updatesensor  22
 #define SYS_getsensorstat 23
+#define SYS_getecostate   24

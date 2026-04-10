@@ -150,6 +150,7 @@ UPROGS=\
 	$U/_powersensor\
 	$U/_readsensors\
 	$U/_sensordemo\
+	$U/_readecostate\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

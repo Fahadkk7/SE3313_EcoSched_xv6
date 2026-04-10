@@ -44,4 +44,5 @@ entry("pause");
 entry("uptime");
 entry("updatesensor");
 entry("getsensorstat");
+entry("getecostate");
 

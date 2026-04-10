@@ -128,3 +128,9 @@ sys_getsensorstat(void)
 
   return sensor_read(type);
 }
+
+uint64
+sys_getecostate(void)
+{
+  return eco_read();
+}
