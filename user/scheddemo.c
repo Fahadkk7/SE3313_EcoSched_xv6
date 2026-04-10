@@ -49,6 +49,8 @@ delay(int n)
  * Worker child: counts how many iterations it can complete within
  * a fixed time window (WINDOW_TICKS).  A throttled worker gets less
  * CPU time per window, so its iteration count drops visibly.
+ * We check uptime() only every 1000 iterations to keep the loop
+ * CPU-bound rather than syscall-bound.
  */
 static void
 worker(int id)
@@ -56,9 +58,13 @@ worker(int id)
   int round = 0;
   while(1){
     uint start = uptime();
-    volatile int count = 0;
-    while(uptime() - start < WINDOW_TICKS){
+    int count = 0;
+    while(1){
       count++;
+      if((count % 1000) == 0){
+        if(uptime() - start >= WINDOW_TICKS)
+          break;
+      }
     }
     round++;
     printf("[worker %d] round %d  iters=%d\n", id, round, count);
