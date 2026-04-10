@@ -149,6 +149,7 @@ UPROGS=\
 	$U/_tempsensor\
 	$U/_powersensor\
 	$U/_readsensors\
+	$U/_sensordemo\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
