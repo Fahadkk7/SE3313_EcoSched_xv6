@@ -104,6 +104,10 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  // Feature 3: Eco-Aware Scheduler fields
+  uint cpu_ticks;              // Total timer ticks consumed by this process
+  uint eco_skip;               // Scheduler skip counter for throttling
 };
 
 // Sensor types
@@ -125,3 +129,11 @@ struct sensor_data {
   int temperature;
   int power_usage;
 };
+
+// Feature 3: Eco-Aware Scheduler
+// Processes with cpu_ticks above this are considered "heavy" and throttled.
+#define ECO_CPU_TICK_THRESHOLD  10
+// In ECO mode, heavy processes run 1 out of every ECO_SKIP_MOD scheduler rounds.
+#define ECO_SKIP_MOD            2
+// In CRITICAL mode, heavy processes run 1 out of every CRIT_SKIP_MOD rounds.
+#define CRIT_SKIP_MOD           4

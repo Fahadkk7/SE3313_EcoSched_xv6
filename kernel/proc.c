@@ -152,6 +152,10 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  // Feature 3: initialize eco-scheduler tracking
+  p->cpu_ticks = 0;
+  p->eco_skip = 0;
+
   return p;
 }
 
@@ -174,6 +178,8 @@ freeproc(struct proc *p)
   p->chan = 0;
   p->killed = 0;
   p->xstate = 0;
+  p->cpu_ticks = 0;
+  p->eco_skip = 0;
   p->state = UNUSED;
 }
 
@@ -420,6 +426,20 @@ kwait(uint64 addr)
   }
 }
 
+// Feature 3 helper: returns 1 if the process is considered essential
+// (init or shell) and should never be throttled.
+static int
+is_essential(struct proc *p)
+{
+  // "init" and "sh" are the two critical system processes in xv6.
+  if(p->name[0] == 'i' && p->name[1] == 'n' && p->name[2] == 'i' &&
+     p->name[3] == 't' && p->name[4] == '\0')
+    return 1;
+  if(p->name[0] == 's' && p->name[1] == 'h' && p->name[2] == '\0')
+    return 1;
+  return 0;
+}
+
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
 // Scheduler never returns.  It loops, doing:
@@ -427,11 +447,17 @@ kwait(uint64 addr)
 //  - swtch to start running that process.
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
+//
+// Feature 3: Eco-Aware Scheduler
+//   NORMAL   -> default round-robin, no throttling.
+//   ECO      -> heavy non-essential processes are skipped every other round.
+//   CRITICAL -> heavy non-essential processes run only 1 in 4 rounds.
 void
 scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
+  int state;
 
   c->proc = 0;
   for(;;){
@@ -443,10 +469,30 @@ scheduler(void)
     intr_on();
     intr_off();
 
+    // Snapshot the current eco state once per scheduling pass.
+    // We read it without the sensorlock here to avoid contention
+    // in the scheduler hot-path; a slightly stale value is acceptable.
+    state = eco_state;
+
     int found = 0;
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
       if(p->state == RUNNABLE) {
+        // ---- Feature 3: eco-aware throttling ----
+        if(state != ECO_NORMAL &&
+           !is_essential(p) &&
+           p->cpu_ticks > ECO_CPU_TICK_THRESHOLD)
+        {
+          int skip_mod = (state == ECO_CRITICAL) ? CRIT_SKIP_MOD : ECO_SKIP_MOD;
+          p->eco_skip++;
+          if((p->eco_skip % skip_mod) != 0){
+            // Skip this process this round — let it wait.
+            release(&p->lock);
+            continue;
+          }
+        }
+        // ---- end throttling check ----
+
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
