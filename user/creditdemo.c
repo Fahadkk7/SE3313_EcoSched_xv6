@@ -45,19 +45,26 @@ state_name(int s)
 }
 
 /*
- * Heavy worker: spin-loop that counts iterations.
- * Burns CPU continuously → should lose credits over time.
+ * Heavy worker: pure user-mode spin-loop.
+ * Burns CPU continuously in user mode → timer interrupts land in
+ * usertrap() → eco_credit_update() increments credit_cpu_ticks →
+ * credits decrease over time.
+ *
+ * IMPORTANT: Do NOT call uptime() in a tight loop here!
+ * uptime() is a syscall that puts the process in kernel mode.
+ * Timer interrupts in kernel mode go to kerneltrap(), which does
+ * NOT update eco credits.
  */
 static void __attribute__((noreturn))
 heavy_worker(int id)
 {
+  int round = 0;
   for(;;){
     volatile int count = 0;
-    uint start = uptime();
-    while(uptime() - start < 30){
+    for(int i = 0; i < 50000000; i++)
       count++;
-    }
-    printf("[heavy %d] pid=%d  iters=%d\n", id, getpid(), count);
+    round++;
+    printf("[heavy %d] pid=%d  round=%d\n", id, getpid(), round);
   }
 }
 
