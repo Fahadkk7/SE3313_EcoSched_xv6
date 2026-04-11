@@ -172,6 +172,11 @@ clockintr()
     ticks++;
     wakeup(&ticks);
     release(&tickslock);
+
+    // Feature 4: evaluate eco-credit windows for ALL processes,
+    // so sleeping/light processes can gain credits even when they
+    // are not consuming any timer ticks.
+    eco_credit_tick_all();
   }
 
   // ask for the next timer interrupt. this also clears

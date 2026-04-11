@@ -880,7 +880,7 @@ eco_read(void)
 // consumed CPU.  At the end of each window:
 //   * If the process used >= ECO_HEAVY_WINDOW ticks → lose 1 credit
 //   * If the process used <= ECO_LIGHT_WINDOW ticks → gain 1 credit
-//   * Otherwise                                    → no change
+//   * Otherwise                                     → no change
 //
 // Credits are clamped to [ECO_MIN_CREDITS, ECO_MAX_CREDITS].
 void
@@ -893,6 +893,10 @@ eco_credit_update(struct proc *p)
 
   // Read the global tick counter (approximate is fine for our purposes).
   uint now = ticks;   // ticks is a volatile global; a stale read is harmless.
+
+  // Initialise the window start on first call (avoids a stale 0 from boot).
+  if(p->credit_window_start == 0)
+    p->credit_window_start = now;
 
   // Has the wall-clock window elapsed?
   if(now - p->credit_window_start >= ECO_CREDIT_WINDOW){
@@ -914,6 +918,41 @@ eco_credit_update(struct proc *p)
   }
 
   release(&p->lock);
+}
+
+// Called periodically (e.g. from clockintr) to evaluate ALL processes,
+// not just the currently running one.  This ensures sleeping/light
+// processes that rarely get timer ticks still have their credit windows
+// evaluated — they will have very low credit_cpu_ticks and gain credits.
+void
+eco_credit_tick_all(void)
+{
+  struct proc *p;
+  uint now = ticks;
+
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if(p->state != UNUSED && p->state != ZOMBIE){
+      // Initialise window on first evaluation.
+      if(p->credit_window_start == 0)
+        p->credit_window_start = now;
+
+      if(now - p->credit_window_start >= ECO_CREDIT_WINDOW){
+        uint used = p->credit_cpu_ticks;
+
+        if(used >= ECO_HEAVY_WINDOW){
+          if(p->eco_credits > ECO_MIN_CREDITS)
+            p->eco_credits--;
+        } else if(used <= ECO_LIGHT_WINDOW){
+          if(p->eco_credits < ECO_MAX_CREDITS)
+            p->eco_credits++;
+        }
+        p->credit_window_start = now;
+        p->credit_cpu_ticks = 0;
+      }
+    }
+    release(&p->lock);
+  }
 }
 
 // Return the eco_credits for the process with the given pid.

@@ -147,6 +147,6 @@ struct sensor_data {
 #define ECO_INITIAL_CREDITS  5   // Starting credits for every new process
 #define ECO_MAX_CREDITS      10  // Upper bound for eco_credits
 #define ECO_MIN_CREDITS      0   // Lower bound for eco_credits
-#define ECO_CREDIT_WINDOW    20  // Ticks per credit evaluation window
-#define ECO_HEAVY_WINDOW     12  // If window_ticks >= this, lose 1 credit
-#define ECO_LIGHT_WINDOW     5   // If window_ticks <= this, gain 1 credit
+#define ECO_CREDIT_WINDOW    15  // Ticks per credit evaluation window
+#define ECO_HEAVY_WINDOW     10  // If window_ticks >= this, lose 1 credit
+#define ECO_LIGHT_WINDOW     3   // If window_ticks <= this, gain 1 credit

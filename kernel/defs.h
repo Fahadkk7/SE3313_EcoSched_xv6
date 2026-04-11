@@ -198,4 +198,5 @@ int      eco_read(void);
 
 // Feature 4: eco-credit system (proc.c)
 void     eco_credit_update(struct proc *);
+void     eco_credit_tick_all(void);
 int      eco_credit_read(int pid);
