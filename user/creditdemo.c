@@ -22,6 +22,14 @@ state_name(int s)
   return "NORMAL";
 }
 
+/* Small busy-wait so the console can drain between prints. */
+static void
+print_delay(void)
+{
+  for(volatile int i = 0; i < 5000000; i++)
+    ;
+}
+
 /* ------------------------------------------------------------------ *
  * Heavy worker
  * Always CPU-bound. Burns cpu_ticks every timer tick -> loses credits.
@@ -31,6 +39,9 @@ state_name(int s)
 static void __attribute__((noreturn))
 heavy_worker(int id)
 {
+  /* Stagger startup so workers don't all print at the same instant. */
+  pause(id * 3 + 1);
+
   int round = 0;
   for(;;){
     uint t0 = uptime();
@@ -43,6 +54,7 @@ heavy_worker(int id)
     round++;
     printf("[heavy %d] pid=%d  round=%-3d  iters=%d\n",
            id, getpid(), round, cnt);
+    print_delay();
   }
 }
 
@@ -58,6 +70,9 @@ heavy_worker(int id)
 static void __attribute__((noreturn))
 light_worker(int id)
 {
+  /* Stagger startup */
+  pause(id * 3 + 2);
+
   /* --- Phase 1: build credits by sleeping --- */
   for(;;){
     volatile int x = 0;
@@ -65,6 +80,7 @@ light_worker(int id)
 
     pause(20);   /* sleep 20 ticks: almost zero cpu_ticks accumulated */
     printf("[light %d] pid=%d  slept  (building credits)\n", id, getpid());
+    print_delay();
 
     /* Switch as soon as the parent puts the system into ECO or CRITICAL. */
     if(getecostate() != ECO_NORMAL)
@@ -74,6 +90,7 @@ light_worker(int id)
   /* Announce transition */
   printf("[light %d] pid=%d  *** ECO detected! credits=%d  switching to CPU-bound ***\n",
          id, getpid(), getecocredits(getpid()));
+  print_delay();
 
   /* --- Phase 2+: CPU-bound, measure iters per window --- */
   int round = 0;
@@ -87,6 +104,7 @@ light_worker(int id)
     round++;
     printf("[light %d] pid=%d  round=%-3d  iters=%d\n",
            id, getpid(), round, cnt);
+    print_delay();
   }
 }
 
