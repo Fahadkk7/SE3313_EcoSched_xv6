@@ -45,14 +45,6 @@ delay(int n)
     ;
 }
 
-/* Small busy-wait so the console can drain between prints. */
-static void
-print_delay(void)
-{
-  for(volatile int i = 0; i < 5000000; i++)
-    ;
-}
-
 /*
  * Worker child: counts how many iterations it can complete within
  * a fixed time window (WINDOW_TICKS).  A throttled worker gets less
@@ -64,7 +56,7 @@ static void
 worker(int id)
 {
   /* Stagger startup so workers don't all print at the same instant. */
-  pause(id * 2 + 1);
+  pause(id * 4 + 1);
 
   int round = 0;
   while(1){
@@ -79,7 +71,7 @@ worker(int id)
     }
     round++;
     printf("[worker %d] round %d  iters=%d\n", id, round, count);
-    print_delay();
+    pause(2);  /* yield so console can drain before next worker prints */
   }
 }
 

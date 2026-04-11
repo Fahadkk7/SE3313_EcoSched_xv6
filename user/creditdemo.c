@@ -22,14 +22,6 @@ state_name(int s)
   return "NORMAL";
 }
 
-/* Small busy-wait so the console can drain between prints. */
-static void
-print_delay(void)
-{
-  for(volatile int i = 0; i < 5000000; i++)
-    ;
-}
-
 /* ------------------------------------------------------------------ *
  * Heavy worker
  * Always CPU-bound. Burns cpu_ticks every timer tick -> loses credits.
@@ -40,7 +32,7 @@ static void __attribute__((noreturn))
 heavy_worker(int id)
 {
   /* Stagger startup so workers don't all print at the same instant. */
-  pause(id * 3 + 1);
+  pause(id * 5 + 1);
 
   int round = 0;
   for(;;){
@@ -52,9 +44,9 @@ heavy_worker(int id)
       if(uptime() - t0 >= WINDOW_TICKS) break;
     }
     round++;
-    printf("[heavy %d] pid=%d  round=%-3d  iters=%d\n",
+    printf("[heavy %d] pid=%d  round=%d  iters=%d\n",
            id, getpid(), round, cnt);
-    print_delay();
+    pause(2);  /* yield so console can drain */
   }
 }
 
@@ -71,7 +63,7 @@ static void __attribute__((noreturn))
 light_worker(int id)
 {
   /* Stagger startup */
-  pause(id * 3 + 2);
+  pause(id * 5 + 3);
 
   /* --- Phase 1: build credits by sleeping --- */
   for(;;){
@@ -80,7 +72,7 @@ light_worker(int id)
 
     pause(20);   /* sleep 20 ticks: almost zero cpu_ticks accumulated */
     printf("[light %d] pid=%d  slept  (building credits)\n", id, getpid());
-    print_delay();
+    pause(2);  /* yield so console can drain */
 
     /* Switch as soon as the parent puts the system into ECO or CRITICAL. */
     if(getecostate() != ECO_NORMAL)
@@ -88,9 +80,9 @@ light_worker(int id)
   }
 
   /* Announce transition */
-  printf("[light %d] pid=%d  *** ECO detected! credits=%d  switching to CPU-bound ***\n",
+  printf("[light %d] pid=%d  *** ECO detected! credits=%d ***\n",
          id, getpid(), getecocredits(getpid()));
-  print_delay();
+  pause(2);
 
   /* --- Phase 2+: CPU-bound, measure iters per window --- */
   int round = 0;
@@ -102,9 +94,9 @@ light_worker(int id)
       if(uptime() - t0 >= WINDOW_TICKS) break;
     }
     round++;
-    printf("[light %d] pid=%d  round=%-3d  iters=%d\n",
+    printf("[light %d] pid=%d  round=%d  iters=%d\n",
            id, getpid(), round, cnt);
-    print_delay();
+    pause(2);  /* yield so console can drain */
   }
 }
 
@@ -154,18 +146,18 @@ main(void)
 
   /* -------- PHASE 1: NORMAL -- let credits diverge -------- */
   printf("**** PHASE 1: NORMAL mode  (credits diverging) ****\n");
-  printf("     Scheduler: plain round-robin, all processes equal\n");
-  printf("     Expect: heavy iters ~= light iters (fair share)\n\n");
+  printf("     Scheduler: plain round-robin, all processes equal\n\n");
 
   for(int snap = 0; snap < 4; snap++){
-    pause(30);
-    printf("  -- credit snapshot %d --\n", snap + 1);
+    pause(40);
+    printf("\n  -- credit snapshot %d --\n", snap + 1);
     for(int i = 0; i < TOTAL; i++){
       int cr = getecocredits(pids[i]);
       printf("    pid %d (%s): eco_credits = %d\n",
              pids[i], kind[i] ? "light" : "heavy", cr);
     }
     printf("\n");
+    pause(3);
   }
 
   /* -------- PHASE 2: ECO -- scheduler picks highest-credit -------- */
@@ -173,18 +165,19 @@ main(void)
   updatesensor(SENSOR_TEMP, 72);
   updatesensor(SENSOR_POWER, 55);
   printf("**** eco_state = %s ****\n", state_name(getecostate()));
-  printf("     Light workers will detect ECO and go CPU-bound.\n");
+  printf("     Light workers detect ECO and go CPU-bound.\n");
   printf("     Expect: light iters >> heavy iters\n\n");
 
   for(int snap = 0; snap < 3; snap++){
-    pause(30);
-    printf("  -- credit snapshot %d --\n", snap + 1);
+    pause(40);
+    printf("\n  -- credit snapshot %d --\n", snap + 1);
     for(int i = 0; i < TOTAL; i++){
       int cr = getecocredits(pids[i]);
       printf("    pid %d (%s): eco_credits = %d\n",
              pids[i], kind[i] ? "light" : "heavy", cr);
     }
     printf("\n");
+    pause(3);
   }
 
   /* -------- PHASE 3: CRITICAL -- heavy workers nearly starved -------- */
@@ -192,18 +185,19 @@ main(void)
   updatesensor(SENSOR_TEMP, 90);
   updatesensor(SENSOR_POWER, 80);
   printf("**** eco_state = %s ****\n", state_name(getecostate()));
-  printf("     Heavy workers: 1/4 scheduler passes + lowest credit\n");
-  printf("     Expect: heavy iters very low or zero\n\n");
+  printf("     Heavy: 1/4 scheduler passes + lowest credit\n");
+  printf("     Expect: heavy iters very low\n\n");
 
   for(int snap = 0; snap < 2; snap++){
-    pause(30);
-    printf("  -- credit snapshot %d --\n", snap + 1);
+    pause(40);
+    printf("\n  -- credit snapshot %d --\n", snap + 1);
     for(int i = 0; i < TOTAL; i++){
       int cr = getecocredits(pids[i]);
       printf("    pid %d (%s): eco_credits = %d\n",
              pids[i], kind[i] ? "light" : "heavy", cr);
     }
     printf("\n");
+    pause(3);
   }
 
   /* -------- Cleanup -------- */
