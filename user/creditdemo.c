@@ -64,7 +64,10 @@ heavy_worker(int id)
     for(int i = 0; i < 50000000; i++)
       count++;
     round++;
-    printf("[heavy %d] pid=%d  round=%d\n", id, getpid(), round);
+    // Only print every 10 rounds to keep output readable.
+    // The process still burns full CPU between prints.
+    if((round % 10) == 0)
+      printf("[heavy %d] pid=%d  round=%d\n", id, getpid(), round);
   }
 }
 
@@ -128,7 +131,7 @@ main(void)
   /* -------- Phase 1: NORMAL – let credits diverge -------- */
   printf("--- Phase 1: NORMAL mode – watching credits diverge ---\n");
   for(int round = 0; round < 4; round++){
-    pause(60);  // wait ~6 seconds
+    pause(30);  // wait ~3 seconds
     printf("  [credit snapshot round %d]\n", round + 1);
     for(int i = 0; i < TOTAL; i++){
       int cr = getecocredits(pids[i]);
@@ -138,14 +141,14 @@ main(void)
   }
 
   /* -------- Phase 2: ECO mode – scheduler prefers high-credit -------- */
-  printf("\n--- Phase 2: ECO mode (temp=72, power=55) ---\n");
+  printf("\n");
+  printf("**** PHASE 2: ECO mode (temp=72, power=55) ****\n");
   updatesensor(SENSOR_TEMP, 72);
   updatesensor(SENSOR_POWER, 55);
-  printf("eco_state = %s\n", state_name(getecostate()));
-  printf("Scheduler now prefers high-credit (light) processes.\n\n");
+  printf("**** eco_state = %s  (scheduler now credit-aware) ****\n\n", state_name(getecostate()));
 
   for(int round = 0; round < 3; round++){
-    pause(60);
+    pause(30);
     printf("  [credit snapshot round %d]\n", round + 1);
     for(int i = 0; i < TOTAL; i++){
       int cr = getecocredits(pids[i]);
@@ -155,14 +158,14 @@ main(void)
   }
 
   /* -------- Phase 3: CRITICAL mode -------- */
-  printf("\n--- Phase 3: CRITICAL mode (temp=90, power=80) ---\n");
+  printf("\n");
+  printf("**** PHASE 3: CRITICAL mode (temp=90, power=80) ****\n");
   updatesensor(SENSOR_TEMP, 90);
   updatesensor(SENSOR_POWER, 80);
-  printf("eco_state = %s\n", state_name(getecostate()));
-  printf("Heavy processes strongly throttled; light processes favoured.\n\n");
+  printf("**** eco_state = %s  (heavy workers strongly throttled) ****\n\n", state_name(getecostate()));
 
   for(int round = 0; round < 2; round++){
-    pause(60);
+    pause(30);
     printf("  [credit snapshot round %d]\n", round + 1);
     for(int i = 0; i < TOTAL; i++){
       int cr = getecocredits(pids[i]);
