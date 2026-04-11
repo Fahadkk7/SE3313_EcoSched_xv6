@@ -134,3 +134,11 @@ sys_getecostate(void)
 {
   return eco_read();
 }
+
+uint64
+sys_getecocredits(void)
+{
+  int pid;
+  argint(0, &pid);
+  return eco_credit_read(pid);
+}

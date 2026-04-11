@@ -45,4 +45,5 @@ entry("uptime");
 entry("updatesensor");
 entry("getsensorstat");
 entry("getecostate");
+entry("getecocredits");
 

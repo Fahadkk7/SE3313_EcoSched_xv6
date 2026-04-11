@@ -82,7 +82,8 @@ usertrap(void)
 
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2){
-    p->cpu_ticks++;   // Feature 3: track CPU usage for eco-aware scheduling
+    p->cpu_ticks++;            // Feature 3: track CPU usage for eco-aware scheduling
+    eco_credit_update(p);      // Feature 4: update eco-credit window tracking
     yield();
   }
 
@@ -154,8 +155,12 @@ kerneltrap()
   }
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2 && myproc() != 0)
+  if(which_dev == 2 && myproc() != 0){
+    struct proc *p = myproc();
+    p->cpu_ticks++;            // Feature 3: also count kernel-mode ticks
+    eco_credit_update(p);      // Feature 4: also track credit in kernel mode
     yield();
+  }
 
   // the yield() may have caused some traps to occur,
   // so restore trap registers for use by kernelvec.S's sepc instruction.
@@ -171,6 +176,11 @@ clockintr()
     ticks++;
     wakeup(&ticks);
     release(&tickslock);
+
+    // Feature 4: evaluate eco-credit windows for ALL processes,
+    // so sleeping/light processes can gain credits even when they
+    // are not consuming any timer ticks.
+    eco_credit_tick_all();
   }
 
   // ask for the next timer interrupt. this also clears
