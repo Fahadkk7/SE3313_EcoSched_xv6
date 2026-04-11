@@ -108,6 +108,11 @@ struct proc {
   // Feature 3: Eco-Aware Scheduler fields
   uint cpu_ticks;              // Total timer ticks consumed by this process
   uint eco_skip;               // Scheduler skip counter for throttling
+
+  // Feature 4: Eco-Credit System
+  int eco_credits;             // Per-process eco-credit score (0..ECO_MAX_CREDITS)
+  uint credit_window_start;    // Global tick count when current credit window began
+  uint credit_cpu_ticks;       // CPU ticks consumed within the current credit window
 };
 
 // Sensor types
@@ -137,3 +142,11 @@ struct sensor_data {
 #define ECO_SKIP_MOD            2
 // In CRITICAL mode, heavy processes run 1 out of every CRIT_SKIP_MOD rounds.
 #define CRIT_SKIP_MOD           4
+
+// Feature 4: Eco-Credit System
+#define ECO_INITIAL_CREDITS  5   // Starting credits for every new process
+#define ECO_MAX_CREDITS      10  // Upper bound for eco_credits
+#define ECO_MIN_CREDITS      0   // Lower bound for eco_credits
+#define ECO_CREDIT_WINDOW    20  // Ticks per credit evaluation window
+#define ECO_HEAVY_WINDOW     12  // If window_ticks >= this, lose 1 credit
+#define ECO_LIGHT_WINDOW     5   // If window_ticks <= this, gain 1 credit

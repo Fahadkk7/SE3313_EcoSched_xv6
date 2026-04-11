@@ -23,3 +23,4 @@
 #define SYS_updatesensor  22
 #define SYS_getsensorstat 23
 #define SYS_getecostate   24
+#define SYS_getecocredits 25

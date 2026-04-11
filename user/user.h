@@ -27,6 +27,7 @@ int uptime(void);
 int updatesensor(int type, int value);
 int getsensorstat(int type);
 int getecostate(void);
+int getecocredits(int pid);
 
 
 // ulib.c

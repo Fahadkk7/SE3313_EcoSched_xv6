@@ -195,3 +195,7 @@ int      sensor_update(int type, int value);
 int      sensor_read(int type);
 void     update_eco_state(void);
 int      eco_read(void);
+
+// Feature 4: eco-credit system (proc.c)
+void     eco_credit_update(struct proc *);
+int      eco_credit_read(int pid);

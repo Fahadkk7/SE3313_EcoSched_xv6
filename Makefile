@@ -152,6 +152,7 @@ UPROGS=\
 	$U/_sensordemo\
 	$U/_readecostate\
 	$U/_scheddemo\
+	$U/_creditdemo\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

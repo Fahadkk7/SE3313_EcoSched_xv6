@@ -12,6 +12,7 @@
 extern uint64 sys_updatesensor(void);
 extern uint64 sys_getsensorstat(void);
 extern uint64 sys_getecostate(void);
+extern uint64 sys_getecocredits(void);
 
 
 
@@ -138,6 +139,7 @@ static uint64 (*syscalls[])(void) = {
 [SYS_updatesensor]  sys_updatesensor,
 [SYS_getsensorstat] sys_getsensorstat,
 [SYS_getecostate]   sys_getecostate,
+[SYS_getecocredits] sys_getecocredits,
 };
 
 void

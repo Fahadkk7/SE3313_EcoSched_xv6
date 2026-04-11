@@ -156,6 +156,11 @@ found:
   p->cpu_ticks = 0;
   p->eco_skip = 0;
 
+  // Feature 4: initialize eco-credits
+  p->eco_credits = ECO_INITIAL_CREDITS;
+  p->credit_window_start = 0;
+  p->credit_cpu_ticks = 0;
+
   return p;
 }
 
@@ -180,6 +185,9 @@ freeproc(struct proc *p)
   p->xstate = 0;
   p->cpu_ticks = 0;
   p->eco_skip = 0;
+  p->eco_credits = 0;
+  p->credit_window_start = 0;
+  p->credit_cpu_ticks = 0;
   p->state = UNUSED;
 }
 
@@ -452,6 +460,11 @@ is_essential(struct proc *p)
 //   NORMAL   -> default round-robin, no throttling.
 //   ECO      -> heavy non-essential processes are skipped every other round.
 //   CRITICAL -> heavy non-essential processes run only 1 in 4 rounds.
+//
+// Feature 4: Eco-Credit Priority
+//   In ECO/CRITICAL modes the scheduler scans all RUNNABLE processes
+//   and picks the one with the highest eco_credits (after throttle
+//   filtering), rewarding efficient processes with more CPU time.
 void
 scheduler(void)
 {
@@ -470,43 +483,71 @@ scheduler(void)
     intr_off();
 
     // Snapshot the current eco state once per scheduling pass.
-    // We read it without the sensorlock here to avoid contention
-    // in the scheduler hot-path; a slightly stale value is acceptable.
     state = eco_state;
 
     int found = 0;
-    for(p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
-      if(p->state == RUNNABLE) {
-        // ---- Feature 3: eco-aware throttling ----
-        if(state != ECO_NORMAL &&
-           !is_essential(p) &&
-           p->cpu_ticks > ECO_CPU_TICK_THRESHOLD)
-        {
-          int skip_mod = (state == ECO_CRITICAL) ? CRIT_SKIP_MOD : ECO_SKIP_MOD;
-          p->eco_skip++;
-          if((p->eco_skip % skip_mod) != 0){
-            // Skip this process this round — let it wait.
-            release(&p->lock);
-            continue;
-          }
+
+    if(state == ECO_NORMAL){
+      // ---- NORMAL mode: plain round-robin (no credit priority) ----
+      for(p = proc; p < &proc[NPROC]; p++) {
+        acquire(&p->lock);
+        if(p->state == RUNNABLE) {
+          p->state = RUNNING;
+          c->proc = p;
+          swtch(&c->context, &p->context);
+          c->proc = 0;
+          found = 1;
         }
-        // ---- end throttling check ----
+        release(&p->lock);
+      }
+    } else {
+      // ---- ECO / CRITICAL mode: throttle + credit-based priority ----
+      // PASS 1: find the best (highest eco_credits) eligible process.
+      struct proc *best = 0;
+      int best_credits = -1;
 
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
+      for(p = proc; p < &proc[NPROC]; p++) {
+        acquire(&p->lock);
+        if(p->state == RUNNABLE) {
+          // Feature 3 throttle check
+          if(!is_essential(p) &&
+             p->cpu_ticks > ECO_CPU_TICK_THRESHOLD)
+          {
+            int skip_mod = (state == ECO_CRITICAL) ? CRIT_SKIP_MOD : ECO_SKIP_MOD;
+            p->eco_skip++;
+            if((p->eco_skip % skip_mod) != 0){
+              release(&p->lock);
+              continue;
+            }
+          }
 
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
+          // Feature 4: pick the process with the highest eco_credits.
+          if(p->eco_credits > best_credits){
+            // Release the previous best if we held it.
+            if(best)
+              release(&best->lock);
+            best = p;
+            best_credits = p->eco_credits;
+            // Keep best->lock held; continue scanning.
+          } else {
+            release(&p->lock);
+          }
+        } else {
+          release(&p->lock);
+        }
+      }
+
+      // PASS 2: run the best process (if any).
+      if(best){
+        best->state = RUNNING;
+        c->proc = best;
+        swtch(&c->context, &best->context);
         c->proc = 0;
+        release(&best->lock);
         found = 1;
       }
-      release(&p->lock);
     }
+
     if(found == 0) {
       // nothing to run; stop running on this core until an interrupt.
       asm volatile("wfi");
@@ -829,4 +870,68 @@ eco_read(void)
   state = eco_state;
   release(&sensorlock);
   return state;
+}
+
+// Feature 4: Eco-Credit System ------------------------------------------
+
+// Called from usertrap() on every timer tick for the currently running
+// process.  Uses wall-clock time (global ticks) to define evaluation
+// windows and counts how many of those ticks this process actually
+// consumed CPU.  At the end of each window:
+//   * If the process used >= ECO_HEAVY_WINDOW ticks → lose 1 credit
+//   * If the process used <= ECO_LIGHT_WINDOW ticks → gain 1 credit
+//   * Otherwise                                    → no change
+//
+// Credits are clamped to [ECO_MIN_CREDITS, ECO_MAX_CREDITS].
+void
+eco_credit_update(struct proc *p)
+{
+  acquire(&p->lock);
+
+  // Count this tick as a CPU tick within the window.
+  p->credit_cpu_ticks++;
+
+  // Read the global tick counter (approximate is fine for our purposes).
+  uint now = ticks;   // ticks is a volatile global; a stale read is harmless.
+
+  // Has the wall-clock window elapsed?
+  if(now - p->credit_window_start >= ECO_CREDIT_WINDOW){
+    uint used = p->credit_cpu_ticks;
+
+    // Heavy usage → penalise
+    if(used >= ECO_HEAVY_WINDOW){
+      if(p->eco_credits > ECO_MIN_CREDITS)
+        p->eco_credits--;
+    }
+    // Light usage → reward
+    else if(used <= ECO_LIGHT_WINDOW){
+      if(p->eco_credits < ECO_MAX_CREDITS)
+        p->eco_credits++;
+    }
+    // Reset the window.
+    p->credit_window_start = now;
+    p->credit_cpu_ticks = 0;
+  }
+
+  release(&p->lock);
+}
+
+// Return the eco_credits for the process with the given pid.
+// Returns -1 if no such process exists.
+int
+eco_credit_read(int pid)
+{
+  struct proc *p;
+  int credits = -1;
+
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if(p->pid == pid && p->state != UNUSED){
+      credits = p->eco_credits;
+      release(&p->lock);
+      return credits;
+    }
+    release(&p->lock);
+  }
+  return credits;
 }

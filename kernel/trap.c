@@ -82,7 +82,8 @@ usertrap(void)
 
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2){
-    p->cpu_ticks++;   // Feature 3: track CPU usage for eco-aware scheduling
+    p->cpu_ticks++;            // Feature 3: track CPU usage for eco-aware scheduling
+    eco_credit_update(p);      // Feature 4: update eco-credit window tracking
     yield();
   }
 
