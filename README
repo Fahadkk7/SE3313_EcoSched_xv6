@@ -1,19 +1,24 @@
-🌱 EcoSched-xv6
+EcoSched-xv6
 An enhanced version of the xv6 that introduces environment-aware scheduling.
 
-🚀 Overview
+Overview
 EcoSched-xv6 monitors simulated temperature and power usage, converts them into a system state, and adapts CPU scheduling accordingly.
 
-⚙️ Features
+Features
 Sensor System: User-space processes simulate environmental data via custom syscalls
 Sustainability Monitor: Kernel maps data → NORMAL, ECO, CRITICAL
 Eco-Aware Scheduler: Scheduling adapts based on system state
 Eco-Credits: Processes gain/lose credits based on CPU efficiency
 
-🛠️ Run
+Run (have everything required to xv6 normally, more info can be found in the original mit readme for xv6)
+
+Clone the repo into a unubtu terminal
+
+Run the following: 
 make clean
 make
 make qemu
 
-🎯 Concept
+
+Concept
 Environmental state → influences scheduler → rewards efficient processes
