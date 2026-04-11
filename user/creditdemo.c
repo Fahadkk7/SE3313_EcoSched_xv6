@@ -1,40 +1,18 @@
-/*
- * creditdemo.c -- Feature 4: Eco-Credit System demonstration.
- *
- * Spawns two kinds of child processes:
- *   - "heavy" workers that spin-loop burning CPU non-stop.
- *   - "light" workers that frequently sleep (via pause()), simulating
- *     efficient, intermittent workloads.
- *
- * The parent queries each child's eco_credits every few seconds so you
- * can observe how the credit system rewards light processes and
- * penalises heavy ones.  It then puts the system into ECO mode to show
- * that the scheduler prefers the high-credit (light) processes.
- *
- * Expected behaviour:
- *   - All processes start at 5 credits.
- *   - After a few windows, heavy processes drift toward 0 credits.
- *   - Light processes drift toward 10 credits.
- *   - In ECO mode, light processes visibly get more CPU time.
- *
- * Constants mirror kernel/proc.h (cannot include kernel headers).
- */
 
 #include "kernel/types.h"
 #include "user/user.h"
 
-/* Sensor type constants */
+/* Mirror kernel/proc.h constants */
 #define SENSOR_TEMP  0
 #define SENSOR_POWER 1
-
-/* Eco state constants */
 #define ECO_NORMAL   0
 #define ECO_ECO      1
 #define ECO_CRITICAL 2
 
-#define NUM_HEAVY 2
-#define NUM_LIGHT 2
-#define TOTAL     (NUM_HEAVY + NUM_LIGHT)
+#define NUM_HEAVY    2
+#define NUM_LIGHT    2
+#define TOTAL        (NUM_HEAVY + NUM_LIGHT)
+#define WINDOW_TICKS 20   /* measure iterations over this many timer ticks */
 
 static const char *
 state_name(int s)
@@ -44,65 +22,94 @@ state_name(int s)
   return "NORMAL";
 }
 
-/*
- * Heavy worker: pure user-mode spin-loop.
- * Burns CPU continuously in user mode → timer interrupts land in
- * usertrap() → eco_credit_update() increments credit_cpu_ticks →
- * credits decrease over time.
- *
- * IMPORTANT: Do NOT call uptime() in a tight loop here!
- * uptime() is a syscall that puts the process in kernel mode.
- * Timer interrupts in kernel mode go to kerneltrap(), which does
- * NOT update eco credits.
- */
+/* ------------------------------------------------------------------ *
+ * Heavy worker
+ * Always CPU-bound. Burns cpu_ticks every timer tick -> loses credits.
+ * In ECO/CRITICAL: throttled by scheduler AND loses credit comparison.
+ * Reports iterations completed per WINDOW_TICKS.
+ * ------------------------------------------------------------------ */
 static void __attribute__((noreturn))
 heavy_worker(int id)
 {
   int round = 0;
   for(;;){
-    volatile int count = 0;
-    for(int i = 0; i < 50000000; i++)
-      count++;
+    uint t0 = uptime();
+    int  cnt = 0;
+    /* Spin until WINDOW_TICKS of wall time elapses. */
+    for(;;){
+      for(volatile int i = 0; i < 10000; i++) cnt++;
+      if(uptime() - t0 >= WINDOW_TICKS) break;
+    }
     round++;
-    // Only print every 10 rounds to keep output readable.
-    // The process still burns full CPU between prints.
-    if((round % 10) == 0)
-      printf("[heavy %d] pid=%d  round=%d\n", id, getpid(), round);
+    printf("[heavy %d] pid=%d  round=%-3d  iters=%d\n",
+           id, getpid(), round, cnt);
   }
 }
 
-/*
- * Light worker: does a small amount of work then sleeps.
- * Uses little CPU → should gain credits over time.
- */
+/* ------------------------------------------------------------------ *
+ * Light worker
+ * Phase 1: work a tiny bit then sleep (pause).
+ *          Low cpu_ticks -> gains eco_credits each window.
+ * Phase 2: detects eco_state != NORMAL via getecostate(), stops sleeping,
+ *          becomes CPU-bound like heavy worker.
+ *          At switch point: cpu_ticks ~= 0 (not throttled), credits ~= 8-9.
+ *          -> Wins EVERY scheduler pick in ECO/CRITICAL mode.
+ * ------------------------------------------------------------------ */
 static void __attribute__((noreturn))
 light_worker(int id)
 {
+  /* --- Phase 1: build credits by sleeping --- */
   for(;;){
-    volatile int count = 0;
-    // Do a tiny bit of work
-    for(int i = 0; i < 5000; i++)
-      count++;
-    // Then sleep for a while (pause = sleep for N ticks)
-    pause(20);
-    printf("[light %d] pid=%d  iters=%d (slept)\n", id, getpid(), count);
+    volatile int x = 0;
+    for(int i = 0; i < 5000; i++) x++;
+
+    pause(20);   /* sleep 20 ticks: almost zero cpu_ticks accumulated */
+    printf("[light %d] pid=%d  slept  (building credits)\n", id, getpid());
+
+    /* Switch as soon as the parent puts the system into ECO or CRITICAL. */
+    if(getecostate() != ECO_NORMAL)
+      break;
+  }
+
+  /* Announce transition */
+  printf("[light %d] pid=%d  *** ECO detected! credits=%d  switching to CPU-bound ***\n",
+         id, getpid(), getecocredits(getpid()));
+
+  /* --- Phase 2+: CPU-bound, measure iters per window --- */
+  int round = 0;
+  for(;;){
+    uint t0 = uptime();
+    int  cnt = 0;
+    for(;;){
+      for(volatile int i = 0; i < 10000; i++) cnt++;
+      if(uptime() - t0 >= WINDOW_TICKS) break;
+    }
+    round++;
+    printf("[light %d] pid=%d  round=%-3d  iters=%d\n",
+           id, getpid(), round, cnt);
   }
 }
 
+/* ------------------------------------------------------------------ *
+ * main
+ * ------------------------------------------------------------------ */
 int
 main(void)
 {
   int pids[TOTAL];
-  int kind[TOTAL];   // 0 = heavy, 1 = light
+  int kind[TOTAL];   /* 0=heavy, 1=light */
 
-  printf("========================================\n");
-  printf("  creditdemo: Feature 4 -- Eco-Credits  \n");
-  printf("========================================\n\n");
+  printf("============================================\n");
+  printf("  creditdemo: Feature 3 + Feature 4 proof  \n");
+  printf("============================================\n\n");
+  printf("HOW TO READ:\n");
+  printf("  iters = iterations completed in a %d-tick window\n", WINDOW_TICKS);
+  printf("  In ECO/CRITICAL: light iters >> heavy iters = scheduler working\n\n");
 
-  /* Ensure we start in NORMAL mode */
+  /* Start in NORMAL state */
   updatesensor(SENSOR_TEMP, 50);
   updatesensor(SENSOR_POWER, 30);
-  printf("eco_state = %s (starting in NORMAL)\n\n", state_name(getecostate()));
+  printf("Starting eco_state = %s\n\n", state_name(getecostate()));
 
   /* Spawn heavy workers */
   for(int i = 0; i < NUM_HEAVY; i++){
@@ -122,68 +129,73 @@ main(void)
     kind[NUM_HEAVY + i] = 1;
   }
 
-  printf("Spawned %d heavy + %d light workers.\n", NUM_HEAVY, NUM_LIGHT);
   printf("PIDs:");
   for(int i = 0; i < TOTAL; i++)
     printf(" %d(%s)", pids[i], kind[i] ? "light" : "heavy");
   printf("\n\n");
 
-  /* -------- Phase 1: NORMAL – let credits diverge -------- */
-  printf("--- Phase 1: NORMAL mode – watching credits diverge ---\n");
-  for(int round = 0; round < 4; round++){
-    pause(30);  // wait ~3 seconds
-    printf("  [credit snapshot round %d]\n", round + 1);
+  /* -------- PHASE 1: NORMAL -- let credits diverge -------- */
+  printf("**** PHASE 1: NORMAL mode  (credits diverging) ****\n");
+  printf("     Scheduler: plain round-robin, all processes equal\n");
+  printf("     Expect: heavy iters ~= light iters (fair share)\n\n");
+
+  for(int snap = 0; snap < 4; snap++){
+    pause(30);
+    printf("  -- credit snapshot %d --\n", snap + 1);
     for(int i = 0; i < TOTAL; i++){
       int cr = getecocredits(pids[i]);
       printf("    pid %d (%s): eco_credits = %d\n",
              pids[i], kind[i] ? "light" : "heavy", cr);
     }
+    printf("\n");
   }
 
-  /* -------- Phase 2: ECO mode – scheduler prefers high-credit -------- */
-  printf("\n");
-  printf("**** PHASE 2: ECO mode (temp=72, power=55) ****\n");
+  /* -------- PHASE 2: ECO -- scheduler picks highest-credit -------- */
+  printf("\n**** PHASE 2: ECO mode  (temp=72, power=55) ****\n");
   updatesensor(SENSOR_TEMP, 72);
   updatesensor(SENSOR_POWER, 55);
-  printf("**** eco_state = %s  (scheduler now credit-aware) ****\n\n", state_name(getecostate()));
+  printf("**** eco_state = %s ****\n", state_name(getecostate()));
+  printf("     Light workers will detect ECO and go CPU-bound.\n");
+  printf("     Expect: light iters >> heavy iters\n\n");
 
-  for(int round = 0; round < 3; round++){
+  for(int snap = 0; snap < 3; snap++){
     pause(30);
-    printf("  [credit snapshot round %d]\n", round + 1);
+    printf("  -- credit snapshot %d --\n", snap + 1);
     for(int i = 0; i < TOTAL; i++){
       int cr = getecocredits(pids[i]);
       printf("    pid %d (%s): eco_credits = %d\n",
              pids[i], kind[i] ? "light" : "heavy", cr);
     }
+    printf("\n");
   }
 
-  /* -------- Phase 3: CRITICAL mode -------- */
-  printf("\n");
-  printf("**** PHASE 3: CRITICAL mode (temp=90, power=80) ****\n");
+  /* -------- PHASE 3: CRITICAL -- heavy workers nearly starved -------- */
+  printf("\n**** PHASE 3: CRITICAL mode  (temp=90, power=80) ****\n");
   updatesensor(SENSOR_TEMP, 90);
   updatesensor(SENSOR_POWER, 80);
-  printf("**** eco_state = %s  (heavy workers strongly throttled) ****\n\n", state_name(getecostate()));
+  printf("**** eco_state = %s ****\n", state_name(getecostate()));
+  printf("     Heavy workers: 1/4 scheduler passes + lowest credit\n");
+  printf("     Expect: heavy iters very low or zero\n\n");
 
-  for(int round = 0; round < 2; round++){
+  for(int snap = 0; snap < 2; snap++){
     pause(30);
-    printf("  [credit snapshot round %d]\n", round + 1);
+    printf("  -- credit snapshot %d --\n", snap + 1);
     for(int i = 0; i < TOTAL; i++){
       int cr = getecocredits(pids[i]);
       printf("    pid %d (%s): eco_credits = %d\n",
              pids[i], kind[i] ? "light" : "heavy", cr);
     }
+    printf("\n");
   }
 
-  /* -------- Clean up -------- */
-  printf("\n--- Restoring NORMAL and cleaning up ---\n");
+  /* -------- Cleanup -------- */
+  printf("\n**** Restoring NORMAL and exiting ****\n");
   updatesensor(SENSOR_TEMP, 45);
   updatesensor(SENSOR_POWER, 25);
 
-  for(int i = 0; i < TOTAL; i++)
-    kill(pids[i]);
-  for(int i = 0; i < TOTAL; i++)
-    wait(0);
+  for(int i = 0; i < TOTAL; i++) kill(pids[i]);
+  for(int i = 0; i < TOTAL; i++) wait(0);
 
-  printf("\ncreditdemo: done.\n");
+  printf("creditdemo: done.\n");
   exit(0);
 }
