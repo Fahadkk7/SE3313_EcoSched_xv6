@@ -57,12 +57,20 @@ struct {
 // user write() system calls to the console go here.
 // uses sleep() and UART interrupts.
 //
+// Acquire console_write_lock (a sleeplock) for the entire write so
+// that concurrent processes cannot interleave their output.
+// We use a sleeplock (not a spinlock) because uartwrite() may
+// call sleep() internally while waiting for the UART transmit buffer.
+//
+static struct sleeplock console_write_lock;
+
 int
 consolewrite(int user_src, uint64 src, int n)
 {
   char buf[32]; // move batches from user space to uart.
   int i = 0;
 
+  acquiresleep(&console_write_lock);
   while(i < n){
     int nn = sizeof(buf);
     if(nn > n - i)
@@ -72,6 +80,7 @@ consolewrite(int user_src, uint64 src, int n)
     uartwrite(buf, nn);
     i += nn;
   }
+  releasesleep(&console_write_lock);
 
   return i;
 }
@@ -188,6 +197,7 @@ void
 consoleinit(void)
 {
   initlock(&cons.lock, "cons");
+  initsleeplock(&console_write_lock, "conswrite");
 
   uartinit();
 
